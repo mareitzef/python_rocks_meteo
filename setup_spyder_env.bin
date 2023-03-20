@@ -1,0 +1,13 @@
+# Reload default profile
+conda init
+
+conda create --name spyder-env
+conda create -c conda-forge -n spyder-env spyder
+conda activate spyder-env
+conda install pip
+
+# sonst: sudo apt-get install spyder ? es wird empfohlen spyder mit conda zu installieren 
+pip install pandas
+pip install plotly
+pip install meteostat
+pip install requests

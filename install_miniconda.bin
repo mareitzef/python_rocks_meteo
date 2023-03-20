@@ -1,0 +1,12 @@
+# Miniconda installieren?
+# https://conda.io/projects/conda/en/latest/user-guide/install/linux.html
+sudo apt install python3.10
+
+cd ~
+
+wget https://repo.anaconda.com/miniconda/Miniconda3-py310_23.1.0-1-Linux-x86_64.sh
+bash Miniconda3-py310_23.1.0-1-Linux-x86_64.sh -b -p ~/miniconda3
+rm Miniconda3-py310_23.1.0-1-Linux-x86_64.sh
+echo 'export PATH="~/miniconda3/bin:$PATH"' >> ~/.bashrc 
+
+

@@ -1,0 +1,17 @@
+# Installiere zuerst miniconda 
+
+./install_miniconda
+
+# danach einen neuen Terminal öffnen 
+
+source ~/.bashrc 
+
+# und spyder und die notwendigen python module installieren: 
+
+./setup_spyder_env
+
+# funktioniert möglicherweise nicht auf anhieb, dann die befehle nacheinander eingeben !! 
+# die Python installation sollte im python environment (spyder-env) gemacht werden, dann beeinflusst man das übrige system nicht
+
+# Dann spyder starten mit: 
+# (spyder-env) cccfr@cccfr-imac21:~/Desktop/python_rocks_meteo$ spyder

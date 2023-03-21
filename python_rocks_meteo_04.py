@@ -112,7 +112,7 @@ def main():
     fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd'], name='Wind Speed',opacity=0.7, line=dict(width=1, dash='dot'),marker=dict(color='red')), row=2, col=1)
     fig.update_yaxes(title_text="Wind Speed (km/h)", row=2, col=1)
     fig.update_yaxes(title_text="Precipitation (mm)", secondary_y=True, row=2, col=1, range=[0, max(data_hourly_Mstat['prcp'])+1])
-    fig.update_layout(title='Historic Data - Meteostat', height=600)
+    fig.update_layout(title='Historic Data - Meteostat - on the Rocks', height=600)
     #plot(fig, filename='Meteostat.html', auto_open=True)
     
     # Create a figure with two subplots

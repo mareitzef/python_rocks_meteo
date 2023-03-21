@@ -102,8 +102,8 @@ def main():
     # Create a figure with two subplots
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, 
                         specs=[[{"secondary_y": True}], [{"secondary_y": True}]])
-    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['dwpt'], name='Hourly Dewpoint Temperature', opacity=0.9, marker=dict(color='orange')), row=1, col=1)
-    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['temp'], name='Hourly Temperature'), row=1, col=1)
+    #fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['dwpt'], name='Hourly Dewpoint Temperature', opacity=0.9, marker=dict(color='orange')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['temp'], name='Hourly Temperature', marker=dict(color='red')), row=1, col=1)
     fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['rhum'], name='Hourly Humidity', line=dict(width=1, dash='dot'),marker=dict(color='grey')), row=1, col=1, secondary_y=True)
     fig.update_yaxes(title_text="Temperature (°C)", secondary_y=False, row=1, col=1)
     fig.update_yaxes(title_text="Humidity (%)", secondary_y=True, row=1, col=1)
@@ -118,15 +118,15 @@ def main():
     # Create a figure with two subplots
     fig2 = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05,specs=[[{}],[{}],[{"secondary_y": True}]])
     # Add traces for temperature and wind speed to the first subplot
-    fig2.add_trace(go.Scatter(x=timestamps, y=temps, name="Temperature"), row=1, col=1)
+    fig2.add_trace(go.Scatter(x=timestamps, y=temps, name="Temperature",marker=dict(color='green')), row=1, col=1)
     # Add a trace for wind speed to the second subplot
-    fig2.add_trace(go.Scatter(x=timestamps, y=wind_speeds, name="Wind Speed",opacity=0.7, line=dict(width=1, dash='dot'),marker=dict(color='red')), row=2, col=1)
+    fig2.add_trace(go.Scatter(x=timestamps, y=wind_speeds, name="Wind Speed",opacity=0.7, line=dict(width=1, dash='dot'),marker=dict(color='pink')), row=2, col=1)
     # Set the y-axis titles for the subplots
     fig2.update_yaxes(title_text="Temperature (°C)", row=1, col=1)
     fig2.update_yaxes(title_text="Wind Speed (km/h)", row=2, col=1)
     
-    fig2.add_trace(go.Bar(x=timestamps, y=rains, name='3-Hourly Precipitation',opacity=0.5,marker=dict(color='blue')), row=3, col=1)
-    fig2.add_trace(go.Scatter(x=timestamps, y=rain_probabs, name='Precipitation Probability',opacity=0.7, line=dict(width=1),marker=dict(color='grey')), row=3, col=1, secondary_y=True)
+    fig2.add_trace(go.Bar(x=timestamps, y=rains, name='3-Hourly Precipitation',opacity=0.5,marker=dict(color='black')), row=3, col=1)
+    fig2.add_trace(go.Scatter(x=timestamps, y=rain_probabs, name='Precipitation Probability',opacity=0.7, line=dict(width=1),marker=dict(color='yellow')), row=3, col=1, secondary_y=True)
     fig2.update_yaxes(title_text="Precipitation (mm/3h)", row=3, col=1, range=[0, max(rains)+1])
     fig2.update_yaxes(title_text="Precipitation Probability (%)", secondary_y=True, row=3, col=1, range=[0, 100])
     

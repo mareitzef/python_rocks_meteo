@@ -125,7 +125,7 @@ def main():
     fig2.update_yaxes(title_text="Temperature (°C)", row=1, col=1)
     fig2.update_yaxes(title_text="Wind Speed (km/h)", row=2, col=1)
     
-    fig2.add_trace(go.Bar(x=timestamps, y=rains, name='3-Hourly Precipitation',opacity=0.5,marker=dict(color='black')), row=3, col=1)
+    fig2.add_trace(go.Bar(x=timestamps, y=rains, name='3-Hourly Precipitation',opacity=0.5,marker=dict(color='orange')), row=3, col=1)
     fig2.add_trace(go.Scatter(x=timestamps, y=rain_probabs, name='Precipitation Probability',opacity=0.7, line=dict(width=1),marker=dict(color='yellow')), row=3, col=1, secondary_y=True)
     fig2.update_yaxes(title_text="Precipitation (mm/3h)", row=3, col=1, range=[0, max(rains)+1])
     fig2.update_yaxes(title_text="Precipitation Probability (%)", secondary_y=True, row=3, col=1, range=[0, 100])

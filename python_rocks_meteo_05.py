@@ -19,6 +19,13 @@ import webbrowser
 import argparse
 import sys
 
+import pandas as pd
+import numpy as np
+from meteostat import Stations, Hourly,Point
+import cdsapi
+from plotly import tools
+
+
 def get_meteostat_data(lat, lon, first_date, today):
     """
     Fetch hourly weather data from the closest Meteostat weather station.
@@ -130,6 +137,7 @@ def main():
         lon = '7.84068'
         api_key = '6545b0638b99383c1a278d3962506f4b'
 
+
     temps,humiditys, wind_speeds, timestamps, rain_probabs, rains = get_weather_data(lat, lon, api_key)
     
     ####################### Main Function - Plots: #####################################
@@ -138,8 +146,8 @@ def main():
     
     # Plot hourly data
     # Create a figure with two subplots
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, 
-                        specs=[[{"secondary_y": True}], [{"secondary_y": True}]])
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, 
+                        specs=[[{"secondary_y": True}], [{"secondary_y": True}], [{"secondary_y": True}]])
     #fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['dwpt'], name='Hourly Dewpoint Temperature', opacity=0.9, marker=dict(color='orange')), row=1, col=1)
     fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['temp'], name='Hourly Temperature', marker=dict(color='red')), row=1, col=1)
     fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['rhum'], name='Hourly Humidity', line=dict(width=1, dash='dot'),marker=dict(color='grey')), row=1, col=1, secondary_y=True)
@@ -161,9 +169,9 @@ def main():
     fig2.update_yaxes(title_text="Temperature (°C)", row=1, col=1)
     fig2.update_yaxes(title_text="Humidity (%)", secondary_y=True, row=1, col=1)
 
-    for i, p in enumerate(rain_probabs):
-        opac = p/100 # update only the first subplot
-    color='rgba(100,0,255,'+opac+')'
+    # for i, p in enumerate(rain_probabs):
+    #     opac = p/100 # update only the first subplot
+    # color='rgba(100,0,255,'+opac+')'
 
     # Add a trace for precipitation to the second subplot
     fig2.add_trace(go.Bar(x=timestamps, y=rains, name='3-Hourly Precipitation',opacity=0.7,marker=dict(color='blue')), row=2, col=1)
@@ -175,7 +183,67 @@ def main():
     # add precipitation probability to second subplot as text on top of the bars
     for i in range(len(rain_probabs)):
         fig2.add_annotation(x=timestamps[i], y=max(rains)+max(rains)*0.1, text=str(int(round(rain_probabs[i])))+"%", showarrow=False, font=dict(color="grey",size=10), row=2, col=1)
-    
+        # Update the layout of the figure
+    fig2.update_layout(title="Openweathermap Forecast", height=600)
+
+    import numpy as np
+
+    # Calculate wind speed at 100m using power law
+    height = 100.0
+    h = height - 10.0
+    alpha = 0.143  # typical value for neutral conditions
+    data_hourly_Mstat['wspd_100m'] = data_hourly_Mstat['wspd']/3.6 * (h / 10.0) ** alpha
+
+    # Define constants and parameters
+    air_density = 1.225  # kg/m^3
+    R = 287.058         # J/kg-K
+    T = 288.15          # K (15 degrees Celsius)
+    radius = 45         # m (half of rotor diameter)
+    swept_area = np.pi * radius**2  # m^2
+    cp = [0.00, 0.40, 0.45, 0.45, 0.46, 0.48, 0.49, 0.50, 0.50, 0.50, 0.50]  # obtained from power curve
+    cut_in_speed = 3     # m/s
+    rated_speed = 16     # m/s
+    cut_out_speed = 25   # m/s
+    rated_power = 1000   # kW
+
+    # Define function to calculate power output
+    def power_output(wind_speed):
+        if wind_speed < cut_in_speed or wind_speed >= cut_out_speed:
+            return 0
+        elif wind_speed < rated_speed:
+            i = int(np.floor((wind_speed - cut_in_speed) / (rated_speed - cut_in_speed) * 10))
+            cp_i = cp[i]
+            p = 0.5 * air_density * swept_area * cp_i * wind_speed**3 / 10000  # kW
+            return p
+        else:
+            p = rated_power
+            return p
+
+    #add power to df as new column
+    data_hourly_Mstat['power'] = np.zeros(len(data_hourly_Mstat['wspd_100m']))
+
+    # Calculate power output for each wind speed
+    data_hourly_Mstat['power'] = data_hourly_Mstat['wspd_100m'].apply(power_output)
+
+    # use plotly.tools.make_subplots to create the figure with a subplot grid
+    #fig3 = make_subplots(rows=1, cols=1, shared_xaxes=True, vertical_spacing=0.05,specs=[[{"secondary_y": True}]])
+    #fig = go.Figure()
+    # add first trace to first axis
+    #fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd'], name='10m'), row=3, col=1)
+    # add second trace to first axis
+    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd_100m'], name='100m'), row=3, col=1)
+    # add third trace to second axis
+    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['power'], name='power', yaxis='y2'), row=3, col=1, secondary_y=True)
+    # set first axis title
+    fig.update_yaxes(title_text='Wind Speed \n at 100m (km/h)', row=3, col=1, secondary_y=False)
+    # set second axis title
+    fig.update_yaxes(title_text='Power (kW)', row=3, col=1, secondary_y=True)
+    # Set the plot title and axes labels
+    #fig.update_layout(title='Wind Speed at 10m and 100m and Power', xaxis_title='Time', yaxis_title='Wind Speed (km/h)')
+    # Display the plot
+    #fig.show()
+
+
     # for i, p in enumerate(rain_probabs):
     #     if p < 33:
     #         color = 'rgba(173, 216, 230, ' + str(p/100) + ')'
@@ -184,11 +252,6 @@ def main():
     #     else:
     #         color = 'rgba(0, 0, 139, ' + str(p/100) + ')'
     #     fig2.data[1].marker.color[i] = color
-
-
-
-    # Update the layout of the figure
-    fig2.update_layout(title="Openweathermap Forecast", height=600)
     
     # Get the HTML code for each plot
     plot1_html = fig.to_html(full_html=False, include_plotlyjs='cdn')

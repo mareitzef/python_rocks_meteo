@@ -35,13 +35,13 @@ def get_meteostat_data(lat, lon, first_date, today):
     stations = Stations().nearby(float(lat),float(lon))
     station = stations.fetch(1)
 
-    point = Point(station['latitude'], station['longitude'], 250)
+    point = Point(station['latitude'], station['longitude'], station['elevation'][0])
     data_hourly_Mstat = Hourly(point, first_date, today).fetch()
 
     return data_hourly_Mstat
 
 
-def get_weather_data(lat, lon, api_key):
+def get_forecast_data(lat, lon, api_key):
     
     # Make API request
     response = requests.get(f'https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&exclude=current,minutely,daily,alerts&appid={api_key}&units=metric')
@@ -126,11 +126,15 @@ def main():
 
     else:
         #use default values
+        # Kühtai 
+        #lat = '47.210925591216'
+        #lon = '11.009436247238742'
         lat = '47.99305'
         lon = '7.84068'
         api_key = '6545b0638b99383c1a278d3962506f4b'
 
-    temps,humiditys, wind_speeds, timestamps, rain_probabs, rains = get_weather_data(lat, lon, api_key)
+
+    temps,humiditys, wind_speeds, timestamps, rain_probabs, rains = get_forecast_data(lat, lon, api_key)
     
     ####################### Main Function - Plots: #####################################
     
@@ -149,7 +153,11 @@ def main():
     fig.add_trace(go.Bar(x=data_hourly_Mstat.index, y=data_hourly_Mstat['prcp'], name='Hourly Precipitation',  marker=dict(color='blue')), row=2, col=1, secondary_y=True)
     fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd'], name='Wind Speed',opacity=1, line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=2, col=1)
     fig.update_yaxes(title_text="Wind Speed (km/h)", row=2, col=1)
-    fig.update_yaxes(title_text="Precipitation (mm)", secondary_y=True, row=2, col=1, range=[0, max(data_hourly_Mstat['prcp'])+1])
+    # if length of data_hourly_Mstat['prcp'] is 0, set range to 0,1
+    if len(data_hourly_Mstat['prcp']) == 0:
+        fig.update_yaxes(title_text="Precipitation (mm)", secondary_y=True, row=2, col=1, range=[0, 1])
+    else:
+        fig.update_yaxes(title_text="Precipitation (mm)", secondary_y=True, row=2, col=1, range=[0, max(data_hourly_Mstat['prcp'])+1])
     fig.update_layout(title='Historic Data - Meteostat', height=600)
     
     # Create a figure with two subplots
@@ -161,9 +169,9 @@ def main():
     fig2.update_yaxes(title_text="Temperature (°C)", row=1, col=1)
     fig2.update_yaxes(title_text="Humidity (%)", secondary_y=True, row=1, col=1)
 
-    for i, p in enumerate(rain_probabs):
-        opac = p/100 # update only the first subplot
-    color='rgba(100,0,255,'+opac+')'
+    # for i, p in enumerate(rain_probabs):
+    #     opac = p/100 # update only the first subplot
+    # color='rgba(100,0,255,'+opac+')'
 
     # Add a trace for precipitation to the second subplot
     fig2.add_trace(go.Bar(x=timestamps, y=rains, name='3-Hourly Precipitation',opacity=0.7,marker=dict(color='blue')), row=2, col=1)

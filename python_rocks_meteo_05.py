@@ -25,7 +25,6 @@ from meteostat import Stations, Hourly,Point
 import cdsapi
 from plotly import tools
 
-
 def get_meteostat_data(lat, lon, first_date, today):
     """
     Fetch hourly weather data from the closest Meteostat weather station.
@@ -42,13 +41,13 @@ def get_meteostat_data(lat, lon, first_date, today):
     stations = Stations().nearby(float(lat),float(lon))
     station = stations.fetch(1)
 
-    point = Point(station['latitude'], station['longitude'], 250)
+    point = Point(station['latitude'], station['longitude'], station['elevation'][0])
     data_hourly_Mstat = Hourly(point, first_date, today).fetch()
 
     return data_hourly_Mstat
 
 
-def get_weather_data(lat, lon, api_key):
+def get_forecast_data(lat, lon, api_key):
     
     # Make API request
     response = requests.get(f'https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&exclude=current,minutely,daily,alerts&appid={api_key}&units=metric')
@@ -133,15 +132,18 @@ def main():
 
     else:
         #use default values
-        lat = '47.99305'
-        lon = '7.84068'
+        # Kühtai 
+        lat = '47.210925591216'
+        lon = '11.009436247238742'
+        #lat = '47.99305'
+        #lon = '7.84068'
         api_key = '6545b0638b99383c1a278d3962506f4b'
 
 
-    temps,humiditys, wind_speeds, timestamps, rain_probabs, rains = get_weather_data(lat, lon, api_key)
+    temps,humiditys, wind_speeds, timestamps, rain_probabs, rains = get_forecast_data(lat, lon, api_key)
     
     ####################### Main Function - Plots: #####################################
-    
+
     data_hourly_Mstat = get_meteostat_data(lat, lon, first_date, today)
     
     # Plot hourly data
@@ -157,42 +159,18 @@ def main():
     fig.add_trace(go.Bar(x=data_hourly_Mstat.index, y=data_hourly_Mstat['prcp'], name='Hourly Precipitation',  marker=dict(color='blue')), row=2, col=1, secondary_y=True)
     fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd'], name='Wind Speed',opacity=1, line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=2, col=1)
     fig.update_yaxes(title_text="Wind Speed (km/h)", row=2, col=1)
-    fig.update_yaxes(title_text="Precipitation (mm)", secondary_y=True, row=2, col=1, range=[0, max(data_hourly_Mstat['prcp'])+1])
+    # if length of data_hourly_Mstat['prcp'] is 0, set range to 0,1
+    if len(data_hourly_Mstat['prcp']) == 0:
+        fig.update_yaxes(title_text="Precipitation (mm)", secondary_y=True, row=2, col=1, range=[0, 1])
+    else:
+        fig.update_yaxes(title_text="Precipitation (mm)", secondary_y=True, row=2, col=1, range=[0, max(data_hourly_Mstat['prcp'])+1])
     fig.update_layout(title='Historic Data - Meteostat', height=600)
     
-    # Create a figure with two subplots
-    fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05,specs=[[{"secondary_y": True}],[{"secondary_y": True}]])
-    # Add traces for temperature and wind speed to the first subplot
-    fig2.add_trace(go.Scatter(x=timestamps, y=temps, name="Temperature",marker=dict(color='red')), row=1, col=1)
-    fig2.add_trace(go.Scatter(x=timestamps, y=humiditys, name='Humidity', line=dict(width=1, dash='dot'),marker=dict(color='grey')), row=1, col=1, secondary_y=True)
-   # Set the y-axis titles for the subplots
-    fig2.update_yaxes(title_text="Temperature (°C)", row=1, col=1)
-    fig2.update_yaxes(title_text="Humidity (%)", secondary_y=True, row=1, col=1)
-
-    # for i, p in enumerate(rain_probabs):
-    #     opac = p/100 # update only the first subplot
-    # color='rgba(100,0,255,'+opac+')'
-
-    # Add a trace for precipitation to the second subplot
-    fig2.add_trace(go.Bar(x=timestamps, y=rains, name='3-Hourly Precipitation',opacity=0.7,marker=dict(color='blue')), row=2, col=1)
-    # Add a trace for wind speed to the second subplot
-    fig2.add_trace(go.Scatter(x=timestamps, y=wind_speeds, name="Wind Speed",opacity=1, line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=2, col=1, secondary_y=True)
-    # Set the y-axis titles for the subplots
-    fig2.update_yaxes(title_text="Precipitation (mm/3h)", row=2, col=1, range=[0, max(rains)+max(rains)*0.15])
-    fig2.update_yaxes(title_text="Wind Speed (km/h)", secondary_y=True, row=2, col=1, range=[0, max(wind_speeds)+1])
-    # add precipitation probability to second subplot as text on top of the bars
-    for i in range(len(rain_probabs)):
-        fig2.add_annotation(x=timestamps[i], y=max(rains)+max(rains)*0.1, text=str(int(round(rain_probabs[i])))+"%", showarrow=False, font=dict(color="grey",size=10), row=2, col=1)
-        # Update the layout of the figure
-    fig2.update_layout(title="Openweathermap Forecast", height=600)
-
-    import numpy as np
-
-    # Calculate wind speed at 100m using power law
+    ###################### Calculate wind speed at 100m using power law ############################
     height = 100.0
     h = height - 10.0
     alpha = 0.143  # typical value for neutral conditions
-    data_hourly_Mstat['wspd_100m'] = data_hourly_Mstat['wspd']/3.6 * (h / 10.0) ** alpha
+    data_hourly_Mstat['wspd_x_m'] = data_hourly_Mstat['wspd']/3.6 * (h / 10.0) ** alpha
 
     # Define constants and parameters
     air_density = 1.225  # kg/m^3
@@ -220,28 +198,48 @@ def main():
             return p
 
     #add power to df as new column
-    data_hourly_Mstat['power'] = np.zeros(len(data_hourly_Mstat['wspd_100m']))
+    data_hourly_Mstat['power'] = np.zeros(len(data_hourly_Mstat['wspd_x_m']))
 
     # Calculate power output for each wind speed
-    data_hourly_Mstat['power'] = data_hourly_Mstat['wspd_100m'].apply(power_output)
+    data_hourly_Mstat['power'] = data_hourly_Mstat['wspd_x_m'].apply(power_output)
 
-    # use plotly.tools.make_subplots to create the figure with a subplot grid
-    #fig3 = make_subplots(rows=1, cols=1, shared_xaxes=True, vertical_spacing=0.05,specs=[[{"secondary_y": True}]])
-    #fig = go.Figure()
-    # add first trace to first axis
-    #fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd'], name='10m'), row=3, col=1)
     # add second trace to first axis
-    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd_100m'], name='100m'), row=3, col=1)
+    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd'], name='Mstat', line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=3, col=1)
+    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd_x_m']*3.6, name=str(height)+'m log', line=dict(width=1.2, dash='dot'),marker=dict(color='green')), row=3, col=1)
     # add third trace to second axis
     fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['power'], name='power', yaxis='y2'), row=3, col=1, secondary_y=True)
     # set first axis title
     fig.update_yaxes(title_text='Wind Speed \n at 100m (km/h)', row=3, col=1, secondary_y=False)
     # set second axis title
     fig.update_yaxes(title_text='Power (kW)', row=3, col=1, secondary_y=True)
-    # Set the plot title and axes labels
-    #fig.update_layout(title='Wind Speed at 10m and 100m and Power', xaxis_title='Time', yaxis_title='Wind Speed (km/h)')
-    # Display the plot
-    #fig.show()
+
+
+    #################### Create seocond plot with forecast data from OpenWeatherMap ############################
+
+    fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05,specs=[[{"secondary_y": True}],[{"secondary_y": True}]])
+    # Add traces for temperature and wind speed to the first subplot
+    fig2.add_trace(go.Scatter(x=timestamps, y=temps, name="Temperature",marker=dict(color='red')), row=1, col=1)
+    fig2.add_trace(go.Scatter(x=timestamps, y=humiditys, name='Humidity', line=dict(width=1, dash='dot'),marker=dict(color='grey')), row=1, col=1, secondary_y=True)
+   # Set the y-axis titles for the subplots
+    fig2.update_yaxes(title_text="Temperature (°C)", row=1, col=1)
+    fig2.update_yaxes(title_text="Humidity (%)", secondary_y=True, row=1, col=1)
+
+    # for i, p in enumerate(rain_probabs):
+    #     opac = p/100 # update only the first subplot
+    # color='rgba(100,0,255,'+opac+')'
+
+    # Add a trace for precipitation to the second subplot
+    fig2.add_trace(go.Bar(x=timestamps, y=rains, name='3-Hourly Precipitation',opacity=0.7,marker=dict(color='blue')), row=2, col=1)
+    # Add a trace for wind speed to the second subplot
+    fig2.add_trace(go.Scatter(x=timestamps, y=wind_speeds, name="Wind Speed",opacity=1, line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=2, col=1, secondary_y=True)
+    # Set the y-axis titles for the subplots
+    fig2.update_yaxes(title_text="Precipitation (mm/3h)", row=2, col=1, range=[0, max(rains)+max(rains)*0.15])
+    fig2.update_yaxes(title_text="Wind Speed (km/h)", secondary_y=True, row=2, col=1, range=[0, max(wind_speeds)+1])
+    # add precipitation probability to second subplot as text on top of the bars
+    for i in range(len(rain_probabs)):
+        fig2.add_annotation(x=timestamps[i], y=max(rains)+max(rains)*0.1, text=str(int(round(rain_probabs[i])))+"%", showarrow=False, font=dict(color="grey",size=10), row=2, col=1)
+        # Update the layout of the figure
+    fig2.update_layout(title="Openweathermap Forecast", height=600)
 
 
     # for i, p in enumerate(rain_probabs):

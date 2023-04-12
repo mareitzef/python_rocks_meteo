@@ -18,12 +18,15 @@ from jinja2 import Environment, FileSystemLoader
 import webbrowser
 import argparse
 import sys
-
 import pandas as pd
 import numpy as np
 from meteostat import Stations, Hourly,Point
 import cdsapi
 from plotly import tools
+from windpowerlib import ModelChain, WindTurbine, create_power_curve
+from windpowerlib import data as wt
+import logging
+logging.getLogger().setLevel(logging.DEBUG)
 
 def get_meteostat_data(lat, lon, first_date, today):
     """
@@ -64,6 +67,7 @@ def get_forecast_data(lat, lon, api_key):
         timestamps = []
         rain_probabs = []
         rains = []
+        pressures = []
         for i in range(0,len(data_OWM['list'])):
             temp = data_OWM['list'][i]['main']['temp']
             humidity = data_OWM['list'][i]['main']['humidity']
@@ -71,6 +75,7 @@ def get_forecast_data(lat, lon, api_key):
             timestamp = data_OWM['list'][i]['dt_txt']
             rain_probab = data_OWM['list'][i]['pop']*100 # convert to %
             # get pressure forecast data
+            pressure = data_OWM['list'][i]['main']['pressure']
             
             try:
                 rain = data_OWM['list'][i]['rain']['3h']
@@ -83,13 +88,81 @@ def get_forecast_data(lat, lon, api_key):
             timestamps.append(timestamp)
             rain_probabs.append(rain_probab)
             rains.append(rain)
+            pressures.append(pressure)
         
     else:
         print("Error: Request failed")
 
-    return (temps,humiditys, wind_speeds, timestamps, rain_probabs, rains)
+    return (temps,humiditys, wind_speeds, timestamps, rain_probabs, rains,pressures)
 
+def power_forecast(df_weather,hubheight,max_power,scale_turbine_to,turb_type):
+    # specification of wind turbine where power curve is provided in the 
+    # oedb turbine library
 
+    windpowerlib_turbine = {
+            "nominal_power": max_power*1000,  # in W
+            'turbine_type': turb_type,  # turbine type as in oedb turbine library
+            'hub_height': hubheight  # in m
+        }
+    # initialize WindTurbine object
+    wpl_turbine = WindTurbine(**windpowerlib_turbine)
+
+    #create_power_curve(wind_speed=x_values, power=y_values*1000
+    #  )
+    # to the given value
+    if scale_turbine_to is not None:
+        wpl_turbine.power_curve['value'] =  wpl_turbine.power_curve['value']* scale_turbine_to*1000/max(wpl_turbine.power_curve['value'])
+        
+        
+
+    # own specifications for ModelChain setup
+    modelchain_data = {
+        'wind_speed_model': 'logarithmic',      # 'logarithmic' (default),
+                                                # 'hellman' or
+                                                # 'interpolation_extrapolation'
+        'density_model': 'barometric',           # 'barometric' (default), 'ideal_gas'
+                                                #  or 'interpolation_extrapolation'
+        'temperature_model': 'linear_gradient', # 'linear_gradient' (def.) or
+                                                # 'interpolation_extrapolation'
+        'power_output_model':
+            'power_curve',                      # 'power_curve' (default) or
+                                                # 'power_coefficient_curve'
+        'density_correction': False,             # False (default) or True
+        'obstacle_height': 0,                   # default: 0
+        'hellman_exp': None}                    # None (default) or None
+
+    # initialize ModelChain with own specifications and use run_model method to
+    # calculate power output
+    mc_wpl_turbine = ModelChain(wpl_turbine, **modelchain_data).run_model(
+        df_weather)
+    # write power output time series to WindTurbine object
+    wpl_turbine.power_output = mc_wpl_turbine.power_output
+    
+    return wpl_turbine
+
+def create_df_weather(dates,wind_10m,temp2m,surf_pres,roughnesslength):
+
+    # create a dictionary with the variables
+    data_dict = {'wind_speed_10m': wind_10m, 
+                #'wind_speed_100m': wind_speed_100m.flatten(),
+                'fsr': np.ones(len(wind_10m))*roughnesslength,
+                't2m': temp2m,
+                'sp': surf_pres
+                }
+
+    # create a pandas DataFrame with the dictionary
+    df_weather = pd.DataFrame(data_dict, index=dates)
+    # create the MultiIndex columns
+    col_dict = {('wind_speed', 10): ('wind_speed_10m', 'wind_speed'),
+                #('wind_speed', 100): ('wind_speed_100m', 'wind_speed'),
+                ('roughness_length', 0): ('fsr', 'roughness_length'),
+                ('temperature', 2): ('t2m', '2mtemperature'),
+                ('pressure', 0): ('sp', 'pressure')}
+    df_weather.columns = pd.MultiIndex.from_tuples(col_dict.keys(), names=['variable_name', 'height'])
+    df_weather = df_weather.rename(columns=col_dict)
+    df_weather.index = pd.to_datetime(df_weather.index).tz_localize('UTC').tz_convert('Europe/Berlin')
+
+    return df_weather
 
 def main():
     ####################### Main Function - Settings: #####################################
@@ -133,18 +206,63 @@ def main():
 
     else:
         #use these coordinates
-        lat = '47.99305'
-        lon = '7.84068'
+        # lat = '47.99305'
+        # lon = '7.84068'
+        #location = 'Dinkelacker' 
+        #lat = 50.667236 
+        #lon = 12.348829 
+        #location = 'Lagos' 
+        #lat= 37.526210
+        #lon = -8.660111
+        location = "HAAR Wind"
+        lat = 51.505347
+        lon = 7.9975447
+
         api_key = '6545b0638b99383c1a278d3962506f4b'
+        first_date = datetime.strptime('2023-01-01', '%Y-%m-%d')
 
+    #get weather data from OpenWeatherMap API
+    temps,humiditys, wind_speeds, timestamps, rain_probabs, rains, pressures = get_forecast_data(lat, lon, api_key)
+    #get weather data from Meteostat API
+    data_hourly_Mstat = get_meteostat_data(lat, lon, first_date, today)
 
-    temps,humiditys, wind_speeds, timestamps, rain_probabs, rains = get_forecast_data(lat, lon, api_key)
+    # define settings for the WindTurbine calculation
+    hubheight = 63
+    turb_type = 'E48/800' # if there is no type, use the scale_turbine_to parameter to scale the turbine to a specific power
+    max_power = 600
+    scale_turbine_to = 530
+    roughnesslength = 0.84
+
+    # get power output for the past 
+        # create a list of dates from data_hourly_Mstat
+    dates = data_hourly_Mstat.index
+    wind_10m = data_hourly_Mstat['wspd'].values/3.6
+    temp2m = data_hourly_Mstat['temp'].values
+    surf_pres = data_hourly_Mstat['pres'].values
     
+
+    df_weather_past = create_df_weather(dates,wind_10m,temp2m,surf_pres,roughnesslength)
+
+    # Calculate power output for each wind speed
+    power_turbine_past = power_forecast(df_weather_past,hubheight,max_power,scale_turbine_to,turb_type)
+    #power_turbine_kW = power_turbine.power_output/1000
+    data_hourly_Mstat['power'] = power_turbine_past.power_output.values/1000
+
+
+    # get power output for the future 
+    dates = timestamps
+    wind_10m = [s/3.6 for s in wind_speeds]
+    temp2m = temps
+    surf_pres = pressures
+
+    df_weather_future = create_df_weather(dates,wind_10m,temp2m,surf_pres,roughnesslength)
+
+    # Calculate power output for each wind speed
+    power_turbine_future = power_forecast(df_weather_future,hubheight,max_power,scale_turbine_to,turb_type)
+    #power_turbine_kW = power_turbine.power_output/1000
+    power_future_plt = power_turbine_future.power_output/1000
 
     ####################### Main Function - Plots: #####################################
-
-    data_hourly_Mstat = get_meteostat_data(lat, lon, first_date, today)
-    
     # Plot hourly data
     # Create a figure with two subplots
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, 
@@ -156,68 +274,23 @@ def main():
     fig.update_yaxes(title_text="Humidity (%)", secondary_y=True, row=1, col=1)
     
     fig.add_trace(go.Bar(x=data_hourly_Mstat.index, y=data_hourly_Mstat['prcp'], name='Hourly Precipitation',  marker=dict(color='blue')), row=2, col=1, secondary_y=True)
-    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd'], name='Wind Speed',opacity=1, line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=2, col=1)
-    fig.update_yaxes(title_text="Wind Speed (km/h)", row=2, col=1)
+    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd'], name='Wind 10m',opacity=1, line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=2, col=1)
+    fig.update_yaxes(title_text="Wind (km/h)", row=2, col=1)
     # if length of data_hourly_Mstat['prcp'] is 0, set range to 0,1
     if len(data_hourly_Mstat['prcp']) == 0:
         fig.update_yaxes(title_text="Precipitation (mm)", secondary_y=True, row=2, col=1, range=[0, 1])
     else:
         fig.update_yaxes(title_text="Precipitation (mm)", secondary_y=True, row=2, col=1, range=[0, max(data_hourly_Mstat['prcp'])+1])
-    fig.update_layout(title='Historic Data - Meteostat', height=600)
-    
-    ###################### Calculate wind speed at 100m using power law ############################
-    height = 100.0
-    h = height - 10.0
-    alpha = 0.143  # typical value for neutral conditions
-    data_hourly_Mstat['wspd_x_m'] = data_hourly_Mstat['wspd']/3.6 * (h / 10.0) ** alpha
-
-    # Define constants and parameters
-    air_density = 1.225  # kg/m^3
-    R = 287.058         # J/kg-K
-    T = 288.15          # K (15 degrees Celsius)
-    radius = 45         # m (half of rotor diameter)
-    swept_area = np.pi * radius**2  # m^2
-    cp = [0.00, 0.40, 0.45, 0.45, 0.46, 0.48, 0.49, 0.50, 0.50, 0.50, 0.50]  # obtained from power curve
-    cut_in_speed = 3     # m/s
-    rated_speed = 16     # m/s
-    cut_out_speed = 25   # m/s
-    rated_power = 1000   # kW
-
-    # Define function to calculate power output
-    def power_output(wind_speed):
-        if wind_speed < cut_in_speed or wind_speed >= cut_out_speed:
-            return 0
-        elif wind_speed < rated_speed:
-            i = int(np.floor((wind_speed - cut_in_speed) / (rated_speed - cut_in_speed) * 10))
-            cp_i = cp[i]
-            p = 0.5 * air_density * swept_area * cp_i * wind_speed**3 / 10000  # kW
-            return p
-        else:
-            p = rated_power
-            return p
-
-    #wpl_turbine = power_forecast(df_weather,nabenhoehe,max_power,scale_turbine_to,turb_type)
-
-    #add power to df as new column
-    data_hourly_Mstat['power'] = np.zeros(len(data_hourly_Mstat['wspd_x_m']))
-
-    # Calculate power output for each wind speed
-    data_hourly_Mstat['power'] = data_hourly_Mstat['wspd_x_m'].apply(power_output)
-
-    # add second trace to first axis
+    # add third subplot
     fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd'], name='Mstat', line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=3, col=1)
-    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['wspd_x_m']*3.6, name=str(height)+'m log', line=dict(width=1.2, dash='dot'),marker=dict(color='green')), row=3, col=1)
-    # add third trace to second axis
-    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['power'], name='power', yaxis='y2'), row=3, col=1, secondary_y=True)
-    # set first axis title
-    fig.update_yaxes(title_text='Wind Speed \n at 100m (km/h)', row=3, col=1, secondary_y=False)
-    # set second axis title
+    fig.add_trace(go.Scatter(x=data_hourly_Mstat.index, y=data_hourly_Mstat['power'], name='power', yaxis='y2',marker=dict(color='lightblue')), row=3, col=1, secondary_y=True)
+    fig.update_yaxes(title_text='Wind hubheight (km/h)', row=3, col=1, secondary_y=False)
     fig.update_yaxes(title_text='Power (kW)', row=3, col=1, secondary_y=True)
-
+    fig.update_layout(title='Historic Data - Meteostat - '+location, height=600)
 
     #################### Create seocond plot with forecast data from OpenWeatherMap ############################
 
-    fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05,specs=[[{"secondary_y": True}],[{"secondary_y": True}]])
+    fig2 = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05,specs=[[{"secondary_y": True}],[{"secondary_y": True}], [{"secondary_y": True}]])
     # Add traces for temperature and wind speed to the first subplot
     fig2.add_trace(go.Scatter(x=timestamps, y=temps, name="Temperature",marker=dict(color='red')), row=1, col=1)
     fig2.add_trace(go.Scatter(x=timestamps, y=humiditys, name='Humidity', line=dict(width=1, dash='dot'),marker=dict(color='grey')), row=1, col=1, secondary_y=True)
@@ -232,16 +305,24 @@ def main():
     # Add a trace for precipitation to the second subplot
     fig2.add_trace(go.Bar(x=timestamps, y=rains, name='3-Hourly Precipitation',opacity=0.7,marker=dict(color='blue')), row=2, col=1)
     # Add a trace for wind speed to the second subplot
-    fig2.add_trace(go.Scatter(x=timestamps, y=wind_speeds, name="Wind Speed",opacity=1, line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=2, col=1, secondary_y=True)
+    fig2.add_trace(go.Scatter(x=timestamps, y=wind_speeds, name="Wind 10m",opacity=1, line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=2, col=1, secondary_y=True)
+    # # add trace for power_future_plt to the second subplot
+    # fig2.add_trace(go.Scatter(x=timestamps, y=power_future_plt, name="Power",opacity=1, line=dict(width=1.2, dash='dot'),marker=dict(color='green')), row=2, col=1, secondary_y=True)
+    
     # Set the y-axis titles for the subplots
     fig2.update_yaxes(title_text="Precipitation (mm/3h)", row=2, col=1, range=[0, max(rains)+max(rains)*0.15])
-    fig2.update_yaxes(title_text="Wind Speed (km/h)", secondary_y=True, row=2, col=1, range=[0, max(wind_speeds)+1])
+    fig2.update_yaxes(title_text="Wind (km/h)", secondary_y=True, row=2, col=1, range=[0, max(wind_speeds)+1])
     # add precipitation probability to second subplot as text on top of the bars
     for i in range(len(rain_probabs)):
         fig2.add_annotation(x=timestamps[i], y=max(rains)+max(rains)*0.1, text=str(int(round(rain_probabs[i])))+"%", showarrow=False, font=dict(color="grey",size=10), row=2, col=1)
         # Update the layout of the figure
-    fig2.update_layout(title="Openweathermap Forecast", height=600)
+    fig2.update_layout(title="Openweathermap Forecast - "+location, height=600)
 
+    # add third subplot with power forecast and wind speed
+    fig2.add_trace(go.Scatter(x=timestamps, y=wind_speeds, name="Wind 10m",opacity=1, line=dict(width=1.2, dash='dot'),marker=dict(color='red')), row=3, col=1)
+    fig2.add_trace(go.Scatter(x=timestamps, y=power_future_plt, name="Power",opacity=1,marker=dict(color='lightblue')), row=3, col=1, secondary_y=True)
+    fig2.update_yaxes(title_text='Wind (km/h)', row=3, col=1, secondary_y=False)
+    fig2.update_yaxes(title_text='Power (kW)', row=3, col=1, secondary_y=True)
 
     # for i, p in enumerate(rain_probabs):
     #     if p < 33:

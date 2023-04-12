@@ -67,9 +67,11 @@ def get_forecast_data(lat, lon, api_key):
         for i in range(0,len(data_OWM['list'])):
             temp = data_OWM['list'][i]['main']['temp']
             humidity = data_OWM['list'][i]['main']['humidity']
-            wind_speed = data_OWM['list'][i]['wind']['speed']*3.6
+            wind_speed = data_OWM['list'][i]['wind']['speed']*3.6 # convert to km/h
             timestamp = data_OWM['list'][i]['dt_txt']
-            rain_probab = data_OWM['list'][i]['pop']*100
+            rain_probab = data_OWM['list'][i]['pop']*100 # convert to %
+            # get pressure forecast data
+            
             try:
                 rain = data_OWM['list'][i]['rain']['3h']
             except KeyError:
@@ -86,7 +88,6 @@ def get_forecast_data(lat, lon, api_key):
         print("Error: Request failed")
 
     return (temps,humiditys, wind_speeds, timestamps, rain_probabs, rains)
-
 
 
 
@@ -131,17 +132,15 @@ def main():
             first_date = datetime.strptime(args.first_date, '%Y-%m-%d')
 
     else:
-        #use default values
-        # Kühtai 
-        lat = '47.210925591216'
-        lon = '11.009436247238742'
-        #lat = '47.99305'
-        #lon = '7.84068'
+        #use these coordinates
+        lat = '47.99305'
+        lon = '7.84068'
         api_key = '6545b0638b99383c1a278d3962506f4b'
 
 
     temps,humiditys, wind_speeds, timestamps, rain_probabs, rains = get_forecast_data(lat, lon, api_key)
     
+
     ####################### Main Function - Plots: #####################################
 
     data_hourly_Mstat = get_meteostat_data(lat, lon, first_date, today)
@@ -196,6 +195,8 @@ def main():
         else:
             p = rated_power
             return p
+
+    #wpl_turbine = power_forecast(df_weather,nabenhoehe,max_power,scale_turbine_to,turb_type)
 
     #add power to df as new column
     data_hourly_Mstat['power'] = np.zeros(len(data_hourly_Mstat['wspd_x_m']))
